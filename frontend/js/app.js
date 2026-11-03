@@ -1294,12 +1294,14 @@ class App {
       let label, remaining;
       const nextAt = this.state?.next_poll_at ? Date.parse(this.state.next_poll_at) : NaN;
       if (mode === 'seconds') {
-        // One run polls back to back for ~3 min, so there is no "next poll"
-        // to count down to — show the pace instead.
+        // The worker's burst rounds land on wall-clock multiples of the
+        // interval (worker.main._burst), so the clock alone gives the next
+        // poll. Between runs there can be a short gap this cannot see.
         const sec = Math.max(10, Number(s.poll_interval_sec) || 10);
+        const left = sec - (Math.floor(Date.now() / 1000) % sec);
         intervalEl.textContent = `${sourcePrefix}매 ${sec}초 연속`;
-        countdownEl.textContent = `${sec}초`;
-        if (suffixEl) suffixEl.textContent = '간격 연속 폴링';
+        countdownEl.textContent = `0:${String(left).padStart(2, '0')}`;
+        if (suffixEl) suffixEl.textContent = '후 다음 폴링';
         return;
       }
       if (this.state?.urgent_cadence) {
