@@ -284,16 +284,18 @@
 
       <div class="card">
         <div class="card__title">폴링 간격</div>
-        <div class="card__desc">최소 10분. 범위·목록 랜덤을 쓰면 매번 다른 간격으로 폴링해 봇 탐지를 피합니다. 폴링은 CF 트리거(3분)에 맞춰 걸리므로, 간격을 3의 배수로 잡으면 설정값 그대로 동작합니다. 수동(지금 확인)은 항상 즉시 동작.</div>
+        <div class="card__desc">분 단위는 최소 10분. 범위·목록 랜덤을 쓰면 매번 다른 간격으로 폴링해 봇 탐지를 피합니다. 폴링은 CF 트리거(3분)에 맞춰 걸리므로, 간격을 3의 배수로 잡으면 설정값 그대로 동작합니다. 초 단위(최소 10초)는 한 번 로그인한 채 3분 동안 연속 조회합니다 — 빠른 대신 계정 차단 위험이 커집니다. 수동(지금 확인)은 항상 즉시 한 번 동작.</div>
         <div class="seg-track" role="tablist" aria-label="폴링 모드">
           <button class="seg-opt" type="button" data-mode="fixed">고정</button>
           <button class="seg-opt" type="button" data-mode="range">범위 랜덤</button>
           <button class="seg-opt" type="button" data-mode="choices">목록 랜덤</button>
+          <button class="seg-opt" type="button" data-mode="seconds">초 단위</button>
         </div>
         <select class="sr-only" id="poll-mode-select" aria-hidden="true" tabindex="-1">
           <option value="fixed">고정</option>
           <option value="range">범위 랜덤</option>
           <option value="choices">목록 랜덤</option>
+          <option value="seconds">초 단위</option>
         </select>
         <div class="pm-input" id="poll-fixed-field">
           <span class="pm-input__label">간격(분)</span>
@@ -308,6 +310,10 @@
             <span class="pm-input__label">최대(분)</span>
             <input class="pm-input__box mono" type="number" inputmode="numeric" min="10" step="1" id="poll-range-max" placeholder="29" aria-label="범위 최대(분)" />
           </div>
+        </div>
+        <div class="pm-input" id="poll-seconds-field" hidden>
+          <span class="pm-input__label">간격(초)</span>
+          <input class="pm-input__box mono" type="number" inputmode="numeric" min="10" step="1" id="poll-seconds-input" placeholder="10" aria-label="초 단위 간격(초)" />
         </div>
         <div class="pm-input" id="poll-choices-field" hidden>
           <span class="pm-input__label">목록(분, 쉼표)</span>

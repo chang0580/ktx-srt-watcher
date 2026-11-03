@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, Callable
 
@@ -27,6 +28,7 @@ from .reservations import (
 )
 from .throttle import (
     after_poll as _after_poll,
+    burst_interval_sec as _burst_interval_sec,
     skip_poll as _skip_poll,
 )
 
@@ -41,6 +43,11 @@ SummaryFn = Callable[..., None]  # (list[Watch], *, silent: bool=False)
 # force an off-cadence poll. Only manual "지금 확인" (workflow_dispatch)
 # bypasses it.
 AUTOMATED_EVENTS = ("schedule", "repository_dispatch", "push")
+
+# Seconds mode: how long one run keeps polling. Just under the 3-min CF tick
+# so the next run usually starts as this one ends (the workflow no longer
+# cancels a running job, so an overlap only queues the next tick).
+BURST_WINDOW_SEC = 170
 
 
 def main() -> int:
@@ -63,23 +70,82 @@ def main() -> int:
     # Only the phone knows whether the user is home; the mode decides whether
     # an urgent alert may override the mute switch.
     pushover.set_mode(remote.fetch_mode())
-    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    run_watches(
-        cfg, s,
-        providers=_providers(s),
-        creds=load_credentials(),
-        notify_fn=notifier.notify,
-        notify_summary_fn=notifier.notify_summary,
-        notify_reserve_success_fn=notifier.notify_reservation_success,
-        notify_reserve_failure_fn=notifier.notify_reservation_failure,
-        schedule_reminders_fn=reminders.schedule_reminders,
-        notify_auto_reserve_disabled_fn=notifier.notify_auto_reserve_disabled,
-        notify_auto_reserve_rearmed_fn=notifier.notify_auto_reserve_rearmed,
-        now_iso=now_iso,
-        event_name=os.environ.get("GITHUB_EVENT_NAME"),
-    )
+    event_name = os.environ.get("GITHUB_EVENT_NAME")
+    providers = _providers(s)
+    creds = load_credentials()
+    logged_in: set[str] = set()
+
+    def poll(config: dict[str, Any], first: bool) -> tuple[int, str, bool]:
+        now_iso = _utc_now_iso()
+        found = run_watches(
+            config, s,
+            providers=providers,
+            creds=creds,
+            notify_fn=notifier.notify,
+            notify_summary_fn=notifier.notify_summary,
+            notify_reserve_success_fn=notifier.notify_reservation_success,
+            notify_reserve_failure_fn=notifier.notify_reservation_failure,
+            schedule_reminders_fn=reminders.schedule_reminders,
+            notify_auto_reserve_disabled_fn=notifier.notify_auto_reserve_disabled,
+            notify_auto_reserve_rearmed_fn=notifier.notify_auto_reserve_rearmed,
+            now_iso=now_iso,
+            event_name=event_name,
+            logged_in=logged_in,
+            burst_round=not first,
+        )
+        return found, now_iso, bool(logged_in)
+
+    _, now_iso, healthy = poll(cfg, True)
+    if healthy and event_name in AUTOMATED_EVENTS and _burst_interval_sec(cfg):
+        cfg, now_iso = _burst(cfg, s, poll, now_iso)
     _save_state(cfg, s, now_iso)
     return 0
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _burst(
+    cfg: dict[str, Any], s: dict[str, Any],
+    poll: Callable[[dict[str, Any], bool], tuple[int, str, bool]], now_iso: str,
+    *, window_sec: float = BURST_WINDOW_SEC,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> tuple[dict[str, Any], str]:
+    """Seconds mode: keep polling every poll_interval_sec until the window
+    closes. Config is re-read each round so app edits (a paused watch, the
+    mode switched back) apply within one gap. State goes to KV only when a
+    round found seats; the rest is saved once at the end, since KV's free tier
+    allows ~1,000 writes a day and a write per poll would be 8,640.
+
+    A round that ends without a live session (login failed, or every search
+    failed) ends the burst: retrying a bad login every 10s is how an account
+    gets locked. The next run retries at the normal tick rate."""
+    start = clock()
+    slot = 1
+    while True:
+        interval = _burst_interval_sec(cfg)
+        if not interval:
+            break
+        due = start + slot * interval
+        if due > start + window_sec:
+            break
+        sleep(max(0.0, due - clock()))
+        slot += 1
+        try:
+            cfg = load_config() or {}
+        except remote.RemoteError as e:
+            log.warning("설정 재조회 실패, 이전 설정으로 계속: %s", e)
+        if not _burst_interval_sec(cfg):
+            break
+        found, now_iso, healthy = poll(cfg, False)
+        if found:
+            _save_state(cfg, s, now_iso)
+        if not healthy:
+            log.warning("세션 없음 — 이번 실행의 연속 조회를 멈춥니다")
+            break
+    return cfg, now_iso
 
 
 def _providers(state: dict[str, Any]) -> dict[str, Provider]:
@@ -181,7 +247,17 @@ def run_watches(
     notify_auto_reserve_disabled_fn: Callable[[Watch], None] | None = None,
     notify_auto_reserve_rearmed_fn: Callable[[Watch], None] | None = None,
     event_name: str | None = None,
-) -> None:
+    logged_in: set[str] | None = None,
+    burst_round: bool = False,
+) -> int:
+    """Poll every active watch once. Returns the number of newly found trains.
+
+    logged_in: provider names whose session from an earlier call in this
+    process is still good — they skip login (seconds mode polls every 10s;
+    logging in that often is its own bot signal). burst_round marks a repeat
+    poll inside one run: it holds back renotify_while_available and the
+    empty-result summary, so those go out once per run, not every 10 seconds.
+    """
     # Poll throttle. Three modes (settings.poll_interval_mode):
     #   fixed   — epoch-bucket cadence at poll_interval_min (default)
     #   range   — random minutes in [lo, hi] each gap (anti-bot)
@@ -190,11 +266,13 @@ def run_watches(
     # watch departs within a couple of days the cadence tightens on its own
     # (throttle.effective_cadence).
     if event_name in AUTOMATED_EVENTS and _skip_poll(config, state, now_iso):
-        return
+        return 0
     state_mod.mark_run(state, now_iso)
     _after_poll(config, state, now_iso)
 
     opts = _run_options(config.get("settings") or {}, event_name, now_iso)
+    if burst_round:
+        opts = replace(opts, renotify=False, summarize_empty=False)
     hooks = _Hooks(
         notify=notify_fn,
         summary=notify_summary_fn,
@@ -218,6 +296,7 @@ def run_watches(
         new_train_total += _poll_provider(
             provider_name, provider, watches, state, now_iso,
             creds.get(provider_name, ("", "")), opts, hooks,
+            logged_in if logged_in is not None else set(),
         )
 
     # Record this *actual* poll (skip runs returned earlier, so they're never
@@ -225,17 +304,20 @@ def run_watches(
     state_mod.record_poll(state, now_iso, new_train_total)
     if opts.summarize_empty and new_train_total == 0:
         _send_summary(hooks.summary, active, opts.silent)
+    return new_train_total
 
 
 def _poll_provider(
     provider_name: str, provider: Provider, watches: list[Watch],
     state: dict[str, Any], now_iso: str, cred: tuple[str, str],
-    opts: _RunOptions, hooks: _Hooks,
+    opts: _RunOptions, hooks: _Hooks, logged_in: set[str],
 ) -> int:
     """Log in, settle earlier holds, then check each watch. Returns the
     number of newly found trains."""
-    if not _login(provider_name, provider, cred, state, now_iso, opts.login_push):
-        return 0
+    if provider_name not in logged_in:
+        if not _login(provider_name, provider, cred, state, now_iso, opts.login_push):
+            return 0
+        logged_in.add(provider_name)
     # Settle holds placed on earlier runs before hunting again: a hold that
     # lapsed unpaid re-arms auto-reserve here, so this poll can re-reserve.
     reservations.resolve_pending_reservations(
@@ -256,6 +338,10 @@ def _poll_provider(
         provider_name, state, now_iso, bool(watches), any_watch_ok,
         last_watch_err, opts.login_push,
     )
+    if watches and not any_watch_ok:
+        # Every search failed: the session may have expired. Log in afresh
+        # on the next call rather than keep reusing it.
+        logged_in.discard(provider_name)
     return found
 
 

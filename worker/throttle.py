@@ -15,6 +15,12 @@ from typing import Any
 # Hard floor for any user-set poll interval (anti-bot / server load).
 MIN_POLL_INTERVAL_MIN = 10
 
+# "seconds" mode: one workflow run stays logged in and polls every
+# poll_interval_sec for a burst window (worker.main), instead of one poll per
+# run. A run cannot start faster than the CF tick, so this is the only way
+# under a minute. Floor at 10s.
+MIN_POLL_INTERVAL_SEC = 10
+
 # Events that obey the throttle (automated cadence). "push"
 # is included so PWA setting changes don't force off-cadence polls; only manual
 # "지금 확인" (workflow_dispatch) bypasses.
@@ -37,6 +43,18 @@ def parse_dt(value: str | None) -> datetime | None:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except (ValueError, TypeError, AttributeError):
         return None
+
+
+def burst_interval_sec(config: dict[str, Any]) -> int:
+    """Seconds between polls inside one run, or 0 when not in seconds mode."""
+    settings = config.get("settings") or {}
+    if settings.get("poll_interval_mode") != "seconds":
+        return 0
+    try:
+        sec = int(settings.get("poll_interval_sec") or 0)
+    except (TypeError, ValueError):
+        sec = 0
+    return max(MIN_POLL_INTERVAL_SEC, sec)
 
 
 def roll_interval_min(mode: str, poll_interval_min: int, settings: dict[str, Any]) -> int:
@@ -76,6 +94,9 @@ def should_throttle(
     """True if this automated run should skip because we polled too recently."""
     now_dt = parse_dt(now_iso)
     if now_dt is None:
+        return False
+    if mode == "seconds":
+        # Every run polls; the run itself paces the polls (burst loop).
         return False
     if mode in ("range", "choices"):
         # Randomized cadence: the target for this gap was rolled and stored
@@ -133,6 +154,8 @@ def has_imminent_watch(config: dict[str, Any], now_iso: str, days: int) -> bool:
 
 def _slowest_gap_min(mode: str, poll_interval_min: int, settings: dict[str, Any]) -> int:
     """Longest gap the user's own cadence can produce (0 = unthrottled)."""
+    if mode == "seconds":
+        return 0
     if mode == "range":
         rng = settings.get("poll_interval_range") or []
         try:

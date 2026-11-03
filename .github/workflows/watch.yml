@@ -27,12 +27,13 @@ permissions:
   contents: read
 
 concurrency:
-  # cancel-in-progress: a newer tick supersedes an older queued one. With CF
-  # firing every 5 min, queuing (false) let runs pile up and hit the 15-min
-  # queue limit → cancelled (looked like "failed"). State is reconciled by the
-  # next run's semantic merge, so cancelling a superseded run is safe.
+  # cancel-in-progress stays false: in seconds mode a run keeps polling for
+  # ~170s (worker.main BURST_WINDOW_SEC), and a tick landing on it must not
+  # kill it mid-burst — that would drop its unsaved state. GitHub still keeps
+  # at most one *pending* run per group (older pending ones are cancelled),
+  # so ticks cannot pile up behind a slow runner.
   group: ticket-watch
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   watch:
