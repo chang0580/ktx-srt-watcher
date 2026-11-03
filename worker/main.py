@@ -117,7 +117,7 @@ def _burst(
     cfg: dict[str, Any], s: dict[str, Any],
     poll: Callable[[dict[str, Any], bool], tuple[int, str, bool]], now_iso: str,
     *, window_sec: float = BURST_WINDOW_SEC,
-    clock: Callable[[], float] = time.monotonic,
+    clock: Callable[[], float] = time.time,
     sleep: Callable[[float], None] = time.sleep,
     should_yield: Callable[[], bool] = actions_queue.manual_run_waiting,
 ) -> tuple[dict[str, Any], str]:
@@ -132,14 +132,17 @@ def _burst(
     gets locked. The next run retries at the normal tick rate.
 
     A manual run waiting for the runner also ends the burst, so "지금 확인"
-    starts within one gap instead of after the whole window."""
+    starts within one gap instead of after the whole window.
+
+    Rounds land on wall-clock multiples of the interval (:00, :10, :20 ...),
+    so the app can count down to the next poll from the clock alone."""
     start = clock()
     slot = 1
     while True:
         interval = _burst_interval_sec(cfg)
         if not interval:
             break
-        due = start + slot * interval
+        due = (int(start // interval) + slot) * interval
         if due > start + window_sec:
             break
         sleep(max(0.0, due - clock()))

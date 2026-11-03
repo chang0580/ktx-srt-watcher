@@ -221,3 +221,19 @@ def test_queue_ignores_running_and_finished_runs(monkeypatch):
 def test_queue_fails_quietly(monkeypatch):
     assert not _queue(monkeypatch, exc=OSError("down"))
     assert not _queue(monkeypatch, [{"status": "queued"}], env=False)
+
+
+def test_burst_rounds_land_on_wall_clock_multiples(monkeypatch):
+    monkeypatch.setattr(main, "load_config", _seconds_config)
+    monkeypatch.setattr(main, "_save_state", lambda *a: None)
+    clock = FakeClock()
+    clock.t = 1003.4          # the run's first poll ended mid-gap
+    times: list[float] = []
+
+    def poll(c, first):
+        times.append(clock())
+        return 0, "t", True
+
+    main._burst(_seconds_config(), {}, poll, "t0", window_sec=35,
+                clock=clock, sleep=clock.sleep, should_yield=lambda: False)
+    assert times == [1010.0, 1020.0, 1030.0]
