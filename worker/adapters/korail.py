@@ -75,6 +75,10 @@ class KorailProvider:
                 watch.from_, watch.to,
                 depart_after=depart_after,
                 passengers=_build_passengers(watch.passengers),
+                # Sold-out trains too: the seat filter below drops them anyway,
+                # but counting them lets the log say "sold out" instead of an
+                # ambiguous zero.
+                include_no_seats=True,
             )
         except NoResultsError:
             return []

@@ -131,7 +131,7 @@ class _FakeTrains:
     def __init__(self, result):
         self._result = result
 
-    def search(self, dep, arr, *, depart_after=None, passengers=None):
+    def search(self, dep, arr, *, depart_after=None, passengers=None, include_no_seats=False):
         if isinstance(self._result, Exception):
             raise self._result
         return self._result
