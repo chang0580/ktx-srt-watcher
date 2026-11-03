@@ -64,16 +64,31 @@ jobs:
         # (worker.remote is stdlib-only for exactly this reason).
         run: python3 -m worker.gate >> "$GITHUB_OUTPUT"
 
-      # System python + a local venv instead of actions/setup-python: on a
+      # System python + a venv instead of actions/setup-python: on a
       # self-hosted ARM device (Raspberry Pi) setup-python has no prebuilt
       # interpreters to download, and the device's python3 (>=3.11 for
-      # pykorail) is exactly what we want anyway. The venv persists in the
-      # runner's work dir, so installs after the first are no-ops.
+      # pykorail) is exactly what we want anyway.
+      #
+      # The venv lives outside the workspace, keyed by requirements + vendored
+      # wheels + python version. actions/checkout's clean step wipes ignored
+      # files, so a workspace .venv was rebuilt from PyPI on every run — and
+      # when the home connection could not reach PyPI (2026-11-04 07:58 KST,
+      # pypi.org/Fastly unreachable while the rest of the web was fine) every
+      # poll failed at this step for an hour. Now PyPI is needed only when the
+      # requirements change.
       - name: Install deps
         if: steps.gate.outputs.poll == 'true' || (github.event_name == 'workflow_dispatch' && inputs.test_notify != 'off')
         run: |
-          python3 -m venv .venv
-          .venv/bin/pip install --quiet -r requirements.txt
+          pyver=$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+          key=$(cat requirements.txt vendor/*.whl | shasum -a 256 | cut -c1-16)
+          venv="$HOME/.cache/ktx-srt-watcher/venv-py$pyver-$key"
+          if [ ! -f "$venv/.ready" ]; then
+            rm -rf "$venv"
+            python3 -m venv "$venv"
+            "$venv/bin/pip" install --quiet -r requirements.txt
+            touch "$venv/.ready"
+          fi
+          ln -sfn "$venv" .venv
 
       # Fires the real seat-found alert with a fabricated train. The path that
       # matters only runs when a cancellation appears — which is exactly when
