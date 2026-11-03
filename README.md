@@ -1,6 +1,6 @@
 # KTX/SRT 취소표 감시 봇
 
-GitHub Actions + Cloudflare Worker bridge가 설정한 간격(최소 10분, 고정/랜덤)으로 [코레일](https://www.letskorail.com)을 폴링해 취소표를 잡고, 텔레그램과 [Pushover](https://pushover.net)로 알림을 보냅니다. 옵션으로 임시예약(20분 hold)까지 자동으로 잡고, 결제 마감이 다가오면 반복 알림을 보냅니다. **결제는 절대 자동화하지 않습니다** — 본인 직접.
+GitHub Actions + Cloudflare Worker bridge가 설정한 간격(최소 10초, 고정/랜덤)으로 [코레일](https://www.letskorail.com)을 폴링해 취소표를 잡고, 텔레그램과 [Pushover](https://pushover.net)로 알림을 보냅니다. 옵션으로 임시예약(20분 hold)까지 자동으로 잡고, 결제 마감이 다가오면 반복 알림을 보냅니다. **결제는 절대 자동화하지 않습니다** — 본인 직접.
 
 > **2026-09-01 코레일·SR 통합 이후** 구 SRT 열차(이제 KTX-산천)를 포함한 모든 고속열차를 코레일 하나로 감시합니다. SRT 앱·API는 2026-08-31에 종료됐습니다. 무엇이 바뀌었고 어떻게 대응했는지는 [코레일·SR 통합 대응](#코레일sr-통합-대응-2026-09)에 정리했습니다.
 
