@@ -33,8 +33,11 @@ echo "$("$PY" --version) OK"
 say "2/5 GitHub 러너 내려받기"
 mkdir -p "$RUNNER_DIR" && cd "$RUNNER_DIR"
 if [ ! -f config.sh ]; then
+  # sed reads to EOF: an early-exiting filter (grep -m1, head) SIGPIPEs curl
+  # and pipefail aborts the script silently.
   ver=$(curl -fsSL https://api.github.com/repos/actions/runner/releases/latest \
-        | grep -m1 '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
+        | sed -nE 's/.*"tag_name": *"v([^"]+)".*/\1/p')
+  [ -n "$ver" ] || { echo "러너 최신 버전을 못 찾았어요. 잠시 뒤 다시 실행하세요."; exit 1; }
   echo "runner v$ver (osx-$ARCH)"
   curl -fsSL -o runner.tar.gz \
     "https://github.com/actions/runner/releases/download/v${ver}/actions-runner-osx-${ARCH}-${ver}.tar.gz"
