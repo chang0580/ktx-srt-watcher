@@ -25,6 +25,9 @@ on:
 # 변경은 다음 정규 폴링에서 반영됩니다.
 permissions:
   contents: read
+  # worker.actions_queue: a seconds-mode burst checks for a waiting manual
+  # run and steps aside for it.
+  actions: read
 
 concurrency:
   # cancel-in-progress stays false: in seconds mode a run keeps polling for
@@ -100,6 +103,7 @@ jobs:
           PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
           PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_TOKEN: ${{ github.token }}
           CF_WORKER_URL: ${{ secrets.CF_WORKER_URL }}
           REMINDER_TOKEN: ${{ secrets.REMINDER_TOKEN }}
         run: .venv/bin/python -m worker.main

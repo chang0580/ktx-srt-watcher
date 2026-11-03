@@ -10,6 +10,7 @@ from typing import Any, Callable
 
 from pydantic import ValidationError
 
+from . import actions_queue
 from . import notifier
 from . import pushover
 from . import reminders
@@ -77,6 +78,9 @@ def main() -> int:
 
     def poll(config: dict[str, Any], first: bool) -> tuple[int, str, bool]:
         now_iso = _utc_now_iso()
+        # Only the first poll is the trigger's own: a manual run's later
+        # rounds are ordinary background polls (quiet hours apply again).
+        event = event_name if first else "repository_dispatch"
         found = run_watches(
             config, s,
             providers=providers,
@@ -89,14 +93,17 @@ def main() -> int:
             notify_auto_reserve_disabled_fn=notifier.notify_auto_reserve_disabled,
             notify_auto_reserve_rearmed_fn=notifier.notify_auto_reserve_rearmed,
             now_iso=now_iso,
-            event_name=event_name,
+            event_name=event,
             logged_in=logged_in,
             burst_round=not first,
         )
         return found, now_iso, bool(logged_in)
 
     _, now_iso, healthy = poll(cfg, True)
-    if healthy and event_name in AUTOMATED_EVENTS and _burst_interval_sec(cfg):
+    # A manual "지금 확인" run bursts too, so stepping aside for it (below)
+    # does not leave a gap until the next tick.
+    bursts = event_name in AUTOMATED_EVENTS or event_name == "workflow_dispatch"
+    if healthy and bursts and _burst_interval_sec(cfg):
         cfg, now_iso = _burst(cfg, s, poll, now_iso)
     _save_state(cfg, s, now_iso)
     return 0
@@ -112,6 +119,7 @@ def _burst(
     *, window_sec: float = BURST_WINDOW_SEC,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
+    should_yield: Callable[[], bool] = actions_queue.manual_run_waiting,
 ) -> tuple[dict[str, Any], str]:
     """Seconds mode: keep polling every poll_interval_sec until the window
     closes. Config is re-read each round so app edits (a paused watch, the
@@ -121,7 +129,10 @@ def _burst(
 
     A round that ends without a live session (login failed, or every search
     failed) ends the burst: retrying a bad login every 10s is how an account
-    gets locked. The next run retries at the normal tick rate."""
+    gets locked. The next run retries at the normal tick rate.
+
+    A manual run waiting for the runner also ends the burst, so "지금 확인"
+    starts within one gap instead of after the whole window."""
     start = clock()
     slot = 1
     while True:
@@ -144,6 +155,9 @@ def _burst(
             _save_state(cfg, s, now_iso)
         if not healthy:
             log.warning("세션 없음 — 이번 실행의 연속 조회를 멈춥니다")
+            break
+        if should_yield():
+            log.info("수동 확인이 대기 중 — 연속 조회를 넘겨줍니다")
             break
     return cfg, now_iso
 

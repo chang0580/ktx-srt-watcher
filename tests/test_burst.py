@@ -165,3 +165,59 @@ def test_burst_keeps_last_config_when_reload_fails(monkeypatch):
     main._burst(_seconds_config(), {}, lambda c, f: calls.append(c) or (0, "t", True),
                 "t0", window_sec=30, clock=clock, sleep=clock.sleep)
     assert len(calls) == 3
+
+
+def test_burst_steps_aside_for_a_waiting_manual_run(monkeypatch):
+    monkeypatch.setattr(main, "load_config", _seconds_config)
+    monkeypatch.setattr(main, "_save_state", lambda *a: None)
+    clock = FakeClock()
+    calls: list = []
+    answers = iter([False, True])
+    main._burst(_seconds_config(), {}, lambda c, f: calls.append(f) or (0, "t", True),
+                "t0", clock=clock, sleep=clock.sleep, should_yield=lambda: next(answers))
+    assert len(calls) == 2
+
+
+# ── actions_queue ───────────────────────────────────────────────────────────
+
+class _Resp:
+    def __init__(self, body: dict) -> None:
+        self._b = __import__("json").dumps(body).encode()
+
+    def read(self) -> bytes:
+        return self._b
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+
+def _queue(monkeypatch, runs=None, exc: Exception | None = None, env=True):
+    from worker import actions_queue
+    if env:
+        monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+        monkeypatch.setenv("GITHUB_TOKEN", "t")
+    else:
+        monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    def fake(req, timeout):
+        if exc:
+            raise exc
+        return _Resp({"workflow_runs": runs or []})
+    monkeypatch.setattr(actions_queue.urllib.request, "urlopen", fake)
+    return actions_queue.manual_run_waiting()
+
+
+def test_queue_sees_a_pending_manual_run(monkeypatch):
+    assert _queue(monkeypatch, [{"status": "in_progress"}, {"status": "pending"}])
+
+
+def test_queue_ignores_running_and_finished_runs(monkeypatch):
+    assert not _queue(monkeypatch, [{"status": "in_progress"}, {"status": "completed"}])
+
+
+def test_queue_fails_quietly(monkeypatch):
+    assert not _queue(monkeypatch, exc=OSError("down"))
+    assert not _queue(monkeypatch, [{"status": "queued"}], env=False)
