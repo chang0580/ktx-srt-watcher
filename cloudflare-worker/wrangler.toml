@@ -42,7 +42,7 @@ crons = ["*/3 * * * *", "*/1 * * * *", "0 * * * *", "0 0 * * *", "0 12 * * SUN"]
 
 [[kv_namespaces]]
 binding = "REMINDERS"
-id = "06eb524fc1df4e119f5cbfbc9e3b4af6"
+id = "1fd41be58a4145339d4cebda670ee7b4"
 
 # STATE: mirror of state.json maintained by the GHA watcher after every
 # successful run. Public GET, auth-required PUT. PWA reads from here for
@@ -50,13 +50,13 @@ id = "06eb524fc1df4e119f5cbfbc9e3b4af6"
 # canonical store and survives CF Worker outage.
 [[kv_namespaces]]
 binding = "STATE"
-id = "e637a6093c6749f183d9112b94eca3de"
+id = "fc88f5f570b24b56967f14ab001df688"
 
 [vars]
-GITHUB_REPO = "yuangunn/ktx-srt-watcher"
+GITHUB_REPO = "chang0580/ktx-srt-watcher"
 # Needed to build the "결제 완료 — 알림 중지" link carried in each reminder.
 # A Worker cannot know its own public hostname, so it has to be told.
-WORKER_URL = "https://ktx-srt-watcher-cron.rms6654.workers.dev"
+WORKER_URL = "https://ktx-srt-watcher-cron.chang0580.workers.dev"
 EVENT_TYPE = "cron-tick"
 # Secrets (set via:  npx wrangler secret put NAME)
 #   GITHUB_TOKEN        Fine-grained PAT, Contents:rw + Actions:rw on the repo

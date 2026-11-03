@@ -746,7 +746,7 @@ async function checkPATExpiration(env) {
         `🚨 CF Worker GITHUB_TOKEN 인증 실패 (401).\n\n` +
           `토큰이 만료/회수됐을 가능성. 즉시 갱신 필요:\n` +
           `1. github.com/settings/personal-access-tokens 에서 새 PAT 발급\n` +
-          `   (Contents:rw + Actions:rw on yuangunn/ktx-srt-watcher)\n` +
+          `   (Contents:rw + Actions:rw on chang0580/ktx-srt-watcher)\n` +
           `2. \`npx wrangler secret put GITHUB_TOKEN\` 으로 갱신`,
       );
     } else {

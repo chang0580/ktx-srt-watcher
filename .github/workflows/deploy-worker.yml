@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     # No secret = nothing to deploy with. Skip cleanly instead of failing every
     # push, so a fork (or this repo before step 2 above) stays green.
-    if: github.repository == 'yuangunn/ktx-srt-watcher'
+    if: github.repository == 'chang0580/ktx-srt-watcher'
     steps:
       - uses: actions/checkout@v4
 
@@ -64,7 +64,7 @@ jobs:
       - name: Verify the deployed Worker answers
         if: steps.deploy.outputs.skipped != 'true'
         run: |
-          url="https://ktx-srt-watcher-cron.rms6654.workers.dev/health"
+          url="https://ktx-srt-watcher-cron.chang0580.workers.dev/health"
           for i in 1 2 3 4 5; do
             code=$(curl -s -o /dev/null -w '%{http_code}' "$url" || true)
             if [ "$code" = "200" ]; then
