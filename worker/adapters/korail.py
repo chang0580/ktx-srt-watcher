@@ -84,12 +84,14 @@ class KorailProvider:
             return []
 
         result: list[Train] = []
+        in_window = 0
         for r in raws:
             dep_time = _fmt_time(r.dep_time)
             if r.train_type_name not in watch.train_types:
                 continue
             if not (watch.time_min <= dep_time <= watch.time_max):
                 continue
+            in_window += 1
             seats_g = 1 if r.has_general_seat() else 0
             seats_s = 1 if r.has_special_seat() else 0
             if seats_g + seats_s == 0:
@@ -111,6 +113,13 @@ class KorailProvider:
             )
             t._raw = r
             result.append(t)
+        # Counts and type names only — never the route or date (public logs).
+        # Tells "sold out" (in_window > 0) apart from "nothing matched the
+        # watch" (e.g. a train-type name the backend spells differently).
+        log.info(
+            "[korail] search: %d trains %s · %d in window · %d with seats",
+            len(raws), sorted({r.train_type_name for r in raws}), in_window, len(result),
+        )
         return result
 
     def reserve(
