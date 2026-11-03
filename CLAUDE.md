@@ -63,7 +63,8 @@ GitHub 호스팅. 설치·보안 수칙: `docs/SELF_HOSTED_RUNNER.md` — 특히
 - **기기 프로파일 고정**: 매 실행 다른 기기로 보이면 봇처럼 보인다. 프로파일 id를
   state(`korail_device_profile`)에 저장해 재사용 (위 `android_id`와 함께)
 - `search()`는 `time_min~time_max` 범위, `train_types` 일치, **잔여석 1석 이상**인 열차만 반환
-- 로그인 세션은 함수 호출 단위. Actions 매 실행마다 새로 로그인
+- 로그인 세션은 실행(잡) 단위. Actions 매 실행마다 새로 로그인하고, 초 단위 모드의
+  연속 조회는 같은 세션을 재사용(`run_watches(logged_in=...)`). 검색이 전부 실패하면 세션을 버림
 - **구 SRT 워치**: `provider: "srt"` 워치는 CF Worker의 `GET /config`가 KV에서
   korail로 바꿔 저장한다(id 유지, "SRT"→"KTX-산천", `migrateLegacyConfig`).
   워커·앱은 korail만 안다. 형식이 틀린 워치는 main이 로그 남기고 건너뛴다
@@ -141,6 +142,7 @@ CF Worker 쪽 시크릿(`npx wrangler secret put`): `GITHUB_TOKEN`,
 2. **Phase 2**: PWA 기본 (목록/추가/삭제)
 3. **Phase 3**: auto_reserve (좌석 선점) 옵션. 결제는 절대 안 함
 4. **Phase 4**: 동적 cron 간격 — 출발 D-2~당일 워치가 있으면 랜덤 10~15분으로 자동 단축 (`throttle.effective_cadence`, `urgent_poll_enabled`)
+5. **Phase 5**: 초 단위 모드 (`poll_interval_mode: "seconds"`, 최소 10초) — 잡 하나가 ~170초 동안 연속 조회 (`main._burst`). state는 좌석 발견 시·잡 끝에만 저장(KV 쓰기 한도). 워크플로는 `cancel-in-progress: false`
 
 ## 코드 스타일
 - pydantic v2, 타입 힌트 필수

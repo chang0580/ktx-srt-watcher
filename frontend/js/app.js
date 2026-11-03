@@ -1029,6 +1029,8 @@ class App {
     const choices = Array.isArray(s.poll_interval_choices) ? s.poll_interval_choices : [];
     const ch = $('#poll-choices-input');
     if (ch) ch.value = choices.join(', ');
+    const sec = $('#poll-seconds-input');
+    if (sec) sec.value = s.poll_interval_sec ? String(s.poll_interval_sec) : '';
     this._applyPollMode(mode);
   }
 
@@ -1037,6 +1039,7 @@ class App {
     show('#poll-fixed-field', mode === 'fixed');
     show('#poll-range-field', mode === 'range');
     show('#poll-choices-field', mode === 'choices');
+    show('#poll-seconds-field', mode === 'seconds');
     // Reflect selection on the segmented control.
     $$('.seg-opt[data-mode]').forEach(btn => {
       btn.setAttribute('aria-selected', btn.dataset.mode === mode ? 'true' : 'false');
@@ -1290,6 +1293,15 @@ class App {
       const sourcePrefix = this.cronSource === 'cf' ? 'CF · ' : '';
       let label, remaining;
       const nextAt = this.state?.next_poll_at ? Date.parse(this.state.next_poll_at) : NaN;
+      if (mode === 'seconds') {
+        // One run polls back to back for ~3 min, so there is no "next poll"
+        // to count down to — show the pace instead.
+        const sec = Math.max(10, Number(s.poll_interval_sec) || 10);
+        intervalEl.textContent = `${sourcePrefix}매 ${sec}초 연속`;
+        countdownEl.textContent = `${sec}초`;
+        if (suffixEl) suffixEl.textContent = '간격 연속 폴링';
+        return;
+      }
       if (this.state?.urgent_cadence) {
         // A watch departs within two days: the worker switched itself to a
         // tighter randomized cadence and stored the rolled target.
@@ -1418,6 +1430,18 @@ class App {
     };
     if (rMin) rMin.addEventListener('change', persistRange);
     if (rMax) rMax.addEventListener('change', persistRange);
+    const secInput = $('#poll-seconds-input');
+    if (secInput) {
+      secInput.addEventListener('change', async () => {
+        const n = Number(secInput.value);
+        // Floor at 10s, same as worker.throttle.MIN_POLL_INTERVAL_SEC.
+        const v = Number.isFinite(n) && n > 0 ? Math.max(10, Math.round(n)) : 10;
+        secInput.value = String(v);
+        ensure().poll_interval_sec = v;
+        await this._save(`settings: poll_interval_sec = ${v}`);
+        this._startCountdown();
+      });
+    }
     const choicesInput = $('#poll-choices-input');
     if (choicesInput) {
       choicesInput.addEventListener('change', async () => {
